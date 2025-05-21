@@ -1,0 +1,468 @@
+#include <Braccio.h>
+#include <Servo.h>
+#include <LiquidCrystal_I2C.h>
+
+LiquidCrystal_I2C lcd(0x27,16,2);
+
+// Braccio Arm Servos
+Servo base;
+Servo shoulder;
+Servo elbow;
+Servo wrist_rot;
+Servo wrist_ver;
+Servo gripper;
+
+// Ultrasonic Sensor Pins
+const int trigPin = 40;
+const int echoPin = 41;
+
+// Ultrasonic Variables
+long duration;
+int distance;
+bool startSequence = false;
+
+char val = '\0';  // Variable to store detected color
+
+// Define color sensor pins'
+#define S0 30
+#define S1 31
+#define S2 32
+#define S3 33
+#define sensorOut 34
+
+// Calibration Values (Min and Max values for sensor mapping)
+int redMin = 195, redMax = 12;
+int greenMin = 227, greenMax = 9;
+int blueMin = 177, blueMax = 12;
+
+// Variables for Color Pulse Width Measurements
+int redPW = 0, greenPW = 0, bluePW = 0;
+
+// Variables for final mapped Color values (0 - 255)
+int redValue, greenValue, blueValue;
+
+// Fixed RGB Values for Each Color
+#define YELLOW_R 12
+#define YELLOW_G 26
+#define YELLOW_B 50
+
+#define BLUE_R 47
+#define BLUE_G 50
+#define BLUE_B 33
+
+#define PINK_R 17
+#define PINK_G 57
+#define PINK_B 44
+
+// Allowable Variation for Color Detection
+#define VARIATION 20
+
+
+void setup() {  
+  // Initialize Braccio and Serial Communication
+  Braccio.begin();
+  Serial.begin(9600);
+  pinMode(trigPin, OUTPUT);
+  pinMode(echoPin, INPUT);
+  
+   // Set S0 - S3 as outputs
+    pinMode(S0, OUTPUT);
+    pinMode(S1, OUTPUT);
+    pinMode(S2, OUTPUT);
+    pinMode(S3, OUTPUT);
+
+    // Set Sensor output as input
+    pinMode(sensorOut, INPUT);
+
+    // Set Frequency scaling to 20%
+    digitalWrite(S0, HIGH);
+    digitalWrite(S1, LOW);
+
+  lcd.init();
+  lcd.clear();
+  lcd.backlight();
+  lcd.setCursor(2, 0);
+  lcd.print("Initializing");
+  delay(1000);
+  lcd.setCursor(1, 0);      //param1 = X   param2 = Y
+  lcd.print("Colour Sorting");
+  lcd.setCursor(4, 1); 
+  lcd.print(" Robot");
+  delay(2000);
+
+ Braccio.ServoMovement(50,      43, 90, 90, 90, 90, 0);
+}
+
+void loop() {
+
+// Ultrasonic Sensor Measurement
+  digitalWrite(trigPin, LOW);
+  delayMicroseconds(2);
+  digitalWrite(trigPin, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(trigPin, LOW);
+  duration = pulseIn(echoPin, HIGH);
+  distance = duration * 0.034 / 2;
+  Serial.print("Distance: ");
+  Serial.print(distance);
+  Serial.println("cm");
+  
+  lcd.clear();
+  lcd.setCursor(2, 0);
+  lcd.print("Robotic Arm");
+  lcd.setCursor(4, 1);
+  lcd.print("WAITING");
+ 
+  // Trigger sequence when an object is detected within set range
+  if (distance <= 10) {
+    startSequence = true;
+     }
+  // Start the Braccio arm sequence if triggered
+  if (startSequence) {
+    runBraccioSequence();
+    startSequence = false;  // Reset to wait for the next signal
+  }
+  delay(1000); // Small delay for sensor stability
+}
+
+void runBraccioSequence() {
+  // Step 1: Move to starting position
+  //                   (delay, M1, M2,  M3,  M4, M5, M6);
+  Serial.println("Braccio Step 1");
+  lcd.clear();
+  lcd.setCursor(1, 0);
+  lcd.print("moving to pick");
+  lcd.setCursor(5, 1);
+  lcd.print("sponge");
+  Braccio.ServoMovement(20,     40, 45, 180, 180, 90, 10);
+  delay(100);
+
+  // Step 2: Move to sponge location
+  //                   (delay, M1, M2,  M3,  M4, M5, M6);
+  Serial.println("Braccio Step 2");
+  Braccio.ServoMovement(20,    40, 120, 150, 150, 90, 0);
+  delay(100);
+
+  // Step 3: Close gripper to grab the sponge
+  //                   (delay, M1, M2,  M3,  M4, M5, M6);
+  Serial.println("Braccio Step 3");
+  lcd.clear();
+  lcd.setCursor(1, 0);
+  lcd.print("picking sponge");
+  Braccio.ServoMovement(10,    40, 120, 150, 150, 90, 90);
+  delay(100);
+
+  // Step 4: Lift the sponge upwards
+  //                   (delay, M1, M2,  M3,  M4, M5, M6);
+  Serial.println("Braccio Step 4");
+  lcd.clear();
+  lcd.setCursor(1, 0);
+  lcd.print("lifting sponge");
+  Braccio.ServoMovement(20,    40, 80, 130, 140, 90, 90);
+  delay(100);
+
+  // Step 5: Move to color sensor location
+  //                   (delay, M1, M2,  M3,  M4, M5, M6);
+  Serial.println("Braccio Step 5");
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("moving to colour");
+  lcd.setCursor(5, 1);
+  lcd.print("sensor");
+  Braccio.ServoMovement(20,    0, 80, 130, 140, 90, 90);
+  delay(100);
+
+  // Step 6: Move down to interact with color sensor
+  //                   (delay, M1, M2,  M3,  M4, M5, M6);
+  Serial.println("Braccio Step 6");
+  lcd.clear();
+  lcd.setCursor(1, 0);
+  lcd.print("interact with");
+  lcd.setCursor(5, 1);
+  lcd.print("sensor");
+  Braccio.ServoMovement(50,   0, 125, 130, 150, 90, 90);
+  delay(100);
+
+  // Step 7: WAIT for valid colour from sensor before proceeding
+  Serial.println("Braccio Step 7: Checking Colour");
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("Analyzing Colour");
+  
+    // Read Red value
+    redPW = getRedPW();
+    redValue = map(redPW, redMin, redMax, 255, 0);
+    delay(200);
+
+    // Read Green value
+    greenPW = getGreenPW();
+    greenValue = map(greenPW, greenMin, greenMax, 255, 0);
+    delay(200);
+
+    // Read Blue value
+    bluePW = getBluePW();
+    blueValue = map(bluePW, blueMin, blueMax, 255, 0);
+    delay(200);
+
+    // Print output to Serial Monitor
+    Serial.print("Red = ");
+   lcd.clear();
+   lcd.setCursor(0, 0);
+   lcd.print("Analyzing Colour");
+  int sensorValue = redValue;
+    Serial.print(sensorValue);
+    Serial.print(" - Green = ");
+    Serial.print(greenValue);
+    Serial.print(" - Blue = ");
+    Serial.println(blueValue);
+
+    // Determine the closest matching color
+    identifyColor();
+
+    delay(100); // Small delay before next reading
+
+  // Step 8: Move to the appropriate drop-off location based on detected color
+  Serial.println("Braccio Step 8");
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  //lcd.print("Braccio Step 8 ");
+  switch (val) {
+    case 'y': // Yellow sponge detected
+      Serial.println("Moving to the Yellow Section");
+      lcd.clear();
+  lcd.setCursor(5, 0);
+  lcd.print("YELLOW");
+  lcd.setCursor(4, 1);
+  lcd.print("Detected");
+  delay(1000);
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("Moving to Yellow");
+  lcd.setCursor(6, 1);
+  lcd.print("Zone");
+  delay(200);
+        //                 (delay, M1, M2,  M3,  M4, M5, M6);
+      Braccio.ServoMovement(100,   75, 90, 135, 135, 90, 90);   //move to yellow section
+      delay(100);
+      Braccio.ServoMovement(50,     75, 110, 160, 170, 90, 90); //go down
+      Braccio.ServoMovement(20,     75, 110, 160, 170, 90, 0);  //open gripper
+      lcd.clear();
+      lcd.setCursor(1, 0);
+      lcd.print("Dropped at the");
+      lcd.setCursor(2, 1);
+      lcd.print("Yellow Zone");
+      delay(1000);
+      break;
+
+    case 'b': // Blue sponge detected
+      Serial.println("Moving to the Blue Section");
+      lcd.clear();
+  lcd.setCursor(6, 0);
+  lcd.print("BLUE");
+  lcd.setCursor(4, 1);
+  lcd.print("Detected");
+  delay(1000);
+  lcd.clear();
+  lcd.setCursor(1, 0);
+  lcd.print("Moving to Blue");
+  lcd.setCursor(6, 1);
+  lcd.print("Zone");
+        //                 (delay, M1, M2,  M3,  M4, M5, M6);
+      Braccio.ServoMovement(100,  105, 90, 135, 135, 90, 90);
+      delay(100);
+      Braccio.ServoMovement(50,   105, 110, 160, 170, 90, 90); //go down
+      Braccio.ServoMovement(20,   105, 110, 160, 170, 90, 0);  //open gripper
+      Serial.println("Dropped at Blue Point");
+      lcd.clear();
+      lcd.setCursor(1, 0);
+      lcd.print("Dropped at the");
+      lcd.setCursor(3, 1);
+      lcd.print("Blue Zone");
+      delay(1000);
+      break;
+
+    case 'p': // Pink sponge detected
+      Serial.println("Moving to the Pink Section");
+      lcd.clear();
+  lcd.setCursor(6, 0);
+  lcd.print("PINK");
+  lcd.setCursor(4, 1);
+  lcd.print("Detected");
+  delay(1000);
+  lcd.clear();
+  lcd.setCursor(1, 0);
+  lcd.print("Moving to Pink");
+  lcd.setCursor(6, 1);
+  lcd.print("Zone");
+        //                 (delay, M1, M2,  M3,  M4, M5, M6);
+      Braccio.ServoMovement(100,  135, 90, 135, 135, 90, 90);
+      delay(100);
+      Braccio.ServoMovement(50,   135, 110, 160, 170, 90, 90); //go down
+      Braccio.ServoMovement(20,   135, 110, 160, 170, 90, 0);  //open gripper
+      Serial.println("Dropped at Pink Point");
+      lcd.clear();
+  lcd.setCursor(1, 0);
+  lcd.print("Dropped at the");
+  lcd.setCursor(3, 1);
+  lcd.print("Pink Zone");
+  delay(1000);
+  break;
+
+      case 't': // No sponge detected after Timer, REJECT
+      Serial.println("Moving to the Rejected Area");
+      lcd.clear();
+  lcd.setCursor(1, 0);
+  lcd.print("NO or Unknown");
+  lcd.setCursor(0, 1);
+  lcd.print("Colour Detected");
+  delay(2000);
+  lcd.clear();
+  lcd.setCursor(3, 0);
+  lcd.print("Moving to");
+  lcd.setCursor(2, 1);
+  lcd.print("Unknown Zone");
+        //                 (delay, M1, M2,  M3,  M4, M5, M6);
+      Braccio.ServoMovement(20,  0, 90, 90, 90, 90, 90);
+      delay(100);
+      Braccio.ServoMovement(50,   0, 40, 40, 60, 90, 90);  // Drop sponge
+      Braccio.ServoMovement(50,   0, 40, 40, 60, 90, 0);  // Drop sponge
+      Serial.println("Dropped at the Rejected Area");
+      lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("Discarded at the");
+    lcd.setCursor(2, 1);
+  lcd.print("Unknown Zone");
+      delay(1000);
+      break;
+     }
+
+  // Step 9: Stand straight up indicating last step
+  Serial.println("LAST LINE OF CODE");
+  lcd.clear();
+  lcd.setCursor(1, 0);
+  lcd.print("Returing HOME");
+       //              (delay, M1, M2,  M3,  M4, M5, M6);
+  Braccio.ServoMovement(50,   40,  90,  90,  90, 90, 0);  //stand upright
+      delay(100);
+}
+
+
+// Function to read Red Pulse Widths
+int getRedPW() {
+    digitalWrite(S2, LOW);
+    digitalWrite(S3, LOW);
+    return pulseIn(sensorOut, LOW);
+}
+
+// Function to read Green Pulse Widths
+int getGreenPW() {
+    digitalWrite(S2, HIGH);
+    digitalWrite(S3, HIGH);
+    return pulseIn(sensorOut, LOW);
+}
+
+// Function to read Blue Pulse Widths
+int getBluePW() {
+    digitalWrite(S2, LOW);
+    digitalWrite(S3, HIGH);
+    return pulseIn(sensorOut, LOW);
+}
+
+void identifyColor() {
+    char detectedColor = '\0';  // Stores confirmed color
+    char previousColor = '\0';  // Stores last detected color
+    int consistencyCount = 0;   // Tracks consecutive matches
+
+    unsigned long startTime = millis();  // Start timer
+
+    while (detectedColor == '\0') {  // Keep checking until a valid color is confirmed
+
+        // Timer Implementation: If no sponge detected within 10 seconds, return 't'
+        if (millis() - startTime >= 10000) {  // 10 seconds timeout
+            Serial.println(" Timeout: No sponge detected for 10 seconds.");
+            val = 't';  // Assign timeout value
+            return;  // Exit function
+        }
+
+        // Read Red value
+        int redPW = getRedPW();
+        redValue = map(redPW, redMin, redMax, 255, 0);
+        delay(200);
+
+        // Read Green value
+        int greenPW = getGreenPW();
+        greenValue = map(greenPW, greenMin, greenMax, 255, 0);
+        delay(200);
+
+        // Read Blue value
+        int bluePW = getBluePW();
+        blueValue = map(bluePW, blueMin, blueMax, 255, 0);
+        delay(200);
+
+        // Temporary variable to store detected color
+        char tempColor = '\0';
+
+        if (isYellow(redValue, greenValue, blueValue)) {
+            tempColor = 'y';
+            Serial.println("Detected Color: Yellow");
+        } else if (isBlue(redValue, greenValue, blueValue)) {
+            tempColor = 'b';
+            Serial.println("Detected Color: Blue");
+        } else if (isPink(redValue, greenValue, blueValue)) {
+            tempColor = 'p';
+            Serial.println("Detected Color: Pink");
+        } else {
+            Serial.println("Awaiting a sponge...");
+            consistencyCount = 0;  // Reset count if no valid color is detected
+            previousColor = '\0';  // Reset previousColor to force rechecking
+            continue;  // Skip the rest of the loop and check again
+        }
+
+        // Reset timer when a sponge is detected
+        startTime = millis();
+
+        // Check for consistency: The detected color must appear 3 times in a row
+        if (tempColor == previousColor) {
+            consistencyCount++;
+        } else {
+            consistencyCount = 1;  // Reset count if color changes
+        }
+
+        previousColor = tempColor;  // Update previous color
+
+        // Confirm detection if the same color is detected 3 times in a row
+        if (consistencyCount == 3) {
+            detectedColor = tempColor;
+            Serial.print("Confirmed Color: ");
+           
+            Serial.println(detectedColor == 'y' ? "Yellow" : detectedColor == 'b' ? "Blue" : "Pink");
+          
+        }
+
+        delay(200); // Small delay for sensor stability
+    }
+
+    val = detectedColor;
+}
+
+// Function to check if detected color is Yellow
+bool isYellow(int red, int green, int blue) {
+    return (abs(red - YELLOW_R) <= VARIATION &&
+            abs(green - YELLOW_G) <= VARIATION &&
+            abs(blue - YELLOW_B) <= VARIATION);
+}
+
+// Function to check if detected color is Blue
+bool isBlue(int red, int green, int blue) {
+    return (abs(red - BLUE_R) <= VARIATION &&
+            abs(green - BLUE_G) <= VARIATION &&
+            abs(blue - BLUE_B) <= VARIATION);
+}
+
+// Function to check if detected color is Pink
+bool isPink(int red, int green, int blue) {
+    return (abs(red - PINK_R) <= VARIATION &&
+            abs(green - PINK_G) <= VARIATION &&
+            abs(blue - PINK_B) <= VARIATION);
+}
+
